@@ -6,8 +6,6 @@ type Id = *mut c_void;
 type Sel = *mut c_void;
 type Class = *mut c_void;
 
-const NIL: Id = ptr::null_mut();
-
 #[link(name = "objc", kind = "dylib")]
 extern "C" {
     fn objc_getClass(name: *const c_char) -> Class;
@@ -100,8 +98,57 @@ fn menu_item(title: &str, action: Sel, key: &str) -> Id {
 
 static mut SYS_ID: IOPMAssertionID = 0;
 static mut DSP_ID: IOPMAssertionID = 0;
+static mut AWAKE: bool = false;
 static mut LID_OFF: bool = false;
+static mut AWAKE_ITEM: Id = ptr::null_mut();
 static mut LID_ITEM: Id = ptr::null_mut();
+static mut BTN: Id = ptr::null_mut();
+
+fn create_assertions() -> bool {
+    unsafe {
+        let name = cfstr("awake");
+        let sys_ty = cfstr("PreventUserIdleSystemSleep");
+        let ok = IOPMAssertionCreateWithName(sys_ty, 255, name, &raw mut SYS_ID) == 0;
+        CFRelease(sys_ty);
+        if ok {
+            let dsp_ty = cfstr("PreventUserIdleDisplaySleep");
+            IOPMAssertionCreateWithName(dsp_ty, 255, name, &raw mut DSP_ID);
+            CFRelease(dsp_ty);
+        }
+        CFRelease(name);
+        ok
+    }
+}
+
+fn release_assertions() {
+    unsafe {
+        IOPMAssertionRelease(SYS_ID);
+        IOPMAssertionRelease(DSP_ID);
+        SYS_ID = 0;
+        DSP_ID = 0;
+    }
+}
+
+fn update_icon() {
+    unsafe {
+        let icon = if AWAKE { "☕" } else { "💤" };
+        send1(BTN, sel("setTitle:"), nsstr(icon));
+    }
+}
+
+extern "C" fn toggle_awake(_this: Id, _cmd: Sel, _sender: Id) {
+    unsafe {
+        if AWAKE {
+            release_assertions();
+            AWAKE = false;
+            send1_i64(AWAKE_ITEM, sel("setState:"), 0);
+        } else if create_assertions() {
+            AWAKE = true;
+            send1_i64(AWAKE_ITEM, sel("setState:"), 1);
+        }
+        update_icon();
+    }
+}
 
 extern "C" fn toggle_lid(_this: Id, _cmd: Sel, _sender: Id) {
     unsafe {
@@ -119,8 +166,9 @@ extern "C" fn toggle_lid(_this: Id, _cmd: Sel, _sender: Id) {
 
 extern "C" fn do_quit(_this: Id, _cmd: Sel, _sender: Id) {
     unsafe {
-        IOPMAssertionRelease(SYS_ID);
-        IOPMAssertionRelease(DSP_ID);
+        if AWAKE {
+            release_assertions();
+        }
         if LID_OFF {
             let _ = Command::new("osascript")
                 .args([
@@ -160,18 +208,7 @@ fn check_disablesleep() -> bool {
 
 pub fn run() {
     unsafe {
-        let name = cfstr("awake");
-        let sys_ty = cfstr("PreventUserIdleSystemSleep");
-        if IOPMAssertionCreateWithName(sys_ty, 255, name, &raw mut SYS_ID) != 0 {
-            eprintln!("cannot create sleep assertion");
-            std::process::exit(1);
-        }
-        let dsp_ty = cfstr("PreventUserIdleDisplaySleep");
-        IOPMAssertionCreateWithName(dsp_ty, 255, name, &raw mut DSP_ID);
-        CFRelease(sys_ty);
-        CFRelease(dsp_ty);
-        CFRelease(name);
-
+        AWAKE = create_assertions();
         LID_OFF = check_disablesleep();
 
         let app = send0(cls("NSApplication") as Id, sel("sharedApplication"));
@@ -179,10 +216,11 @@ pub fn run() {
 
         let bar = send0(cls("NSStatusBar") as Id, sel("systemStatusBar"));
         let item = send1_f64(bar, sel("statusItemWithLength:"), -1.0);
-        let btn = send0(item, sel("button"));
-        send1(btn, sel("setTitle:"), nsstr("☕"));
+        BTN = send0(item, sel("button"));
+        update_icon();
 
         let del_cls = objc_allocateClassPair(cls("NSObject"), c"AwakeDelegate".as_ptr(), 0);
+        class_addMethod(del_cls, sel("toggleAwake:"), toggle_awake as *const c_void, c"v@:@".as_ptr());
         class_addMethod(del_cls, sel("toggleLid:"), toggle_lid as *const c_void, c"v@:@".as_ptr());
         class_addMethod(del_cls, sel("quit:"), do_quit as *const c_void, c"v@:@".as_ptr());
         objc_registerClassPair(del_cls);
@@ -190,10 +228,12 @@ pub fn run() {
 
         let menu = send0(send0(cls("NSMenu") as Id, sel("alloc")), sel("init"));
 
-        let hdr = menu_item("Preventing Sleep", NIL as Sel, "");
-        send1_i64(hdr, sel("setEnabled:"), 0);
-        send1(menu, sel("addItem:"), hdr);
-        send1(menu, sel("addItem:"), send0(cls("NSMenuItem") as Id, sel("separatorItem")));
+        AWAKE_ITEM = menu_item("Stay Awake", sel("toggleAwake:"), "");
+        send1(AWAKE_ITEM, sel("setTarget:"), delegate);
+        if AWAKE {
+            send1_i64(AWAKE_ITEM, sel("setState:"), 1);
+        }
+        send1(menu, sel("addItem:"), AWAKE_ITEM);
 
         LID_ITEM = menu_item("Prevent Lid-Close Sleep", sel("toggleLid:"), "");
         send1(LID_ITEM, sel("setTarget:"), delegate);
@@ -201,6 +241,7 @@ pub fn run() {
             send1_i64(LID_ITEM, sel("setState:"), 1);
         }
         send1(menu, sel("addItem:"), LID_ITEM);
+
         send1(menu, sel("addItem:"), send0(cls("NSMenuItem") as Id, sel("separatorItem")));
 
         let q = menu_item("Quit", sel("quit:"), "q");
