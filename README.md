@@ -2,7 +2,7 @@
 
 Stop your laptop from sleeping.
 
-**[Download](https://shoulders-ai.github.io/mim-awake/)**
+**[Download](https://mim.shoulde.rs/mim-awake)**
 
 ## Build
 
