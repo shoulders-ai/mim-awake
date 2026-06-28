@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Awake</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  background: #0d1117;
+  color: #c9d1d9;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1.5rem;
+}
+.icon { font-size: 4.5rem; margin-bottom: 0.75rem; }
+h1 { font-size: 2.5rem; font-weight: 700; color: #e6edf3; letter-spacing: -0.02em; }
+.tag {
+  color: #8b949e;
+  font-size: 1.05rem;
+  margin: 0.5rem 0 2.5rem;
+  text-align: center;
+  line-height: 1.6;
+}
+.tag strong { color: #c9d1d9; font-weight: 500; }
+.downloads {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-bottom: 2.5rem;
+}
+.downloads a {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 1rem 1.75rem;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 10px;
+  color: #e6edf3;
+  text-decoration: none;
+  transition: border-color 0.2s, background 0.2s;
+  min-width: 130px;
+}
+.downloads a:hover {
+  border-color: #f0883e;
+  background: #1c2129;
+}
+.downloads .os { font-weight: 600; font-size: 0.95rem; }
+.downloads .arch { font-size: 0.75rem; color: #8b949e; }
+.sep {
+  width: 80px;
+  border: none;
+  border-top: 1px solid #21262d;
+  margin: 0 0 2rem;
+}
+.features {
+  list-style: none;
+  max-width: 380px;
+  margin-bottom: 2.5rem;
+}
+.features li {
+  padding: 0.3rem 0;
+  font-size: 0.9rem;
+  color: #8b949e;
+}
+.features li::before {
+  content: "~";
+  color: #f0883e;
+  margin-right: 0.6rem;
+  font-weight: 700;
+}
+.source {
+  background: #161b22;
+  border: 1px solid #21262d;
+  border-radius: 8px;
+  padding: 0.75rem 1.25rem;
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 0.8rem;
+  color: #8b949e;
+  margin-bottom: 2.5rem;
+  text-align: center;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.source span { color: #c9d1d9; }
+footer { font-size: 0.8rem; color: #484f58; }
+footer a { color: #8b949e; text-decoration: none; }
+footer a:hover { color: #f0883e; }
+</style>
+</head>
+<body>
+
+<div class="icon">&#9749;</div>
+<h1>Awake</h1>
+<p class="tag">
+  Keep your machine awake.<br>
+  <strong>~400KB</strong> binary. Zero dependencies. Pure Rust.
+</p>
+
+<div class="downloads">
+  <a href="https://github.com/shoulders-ai/mim-awake/releases/latest/download/awake-macos-arm64.zip">
+    <span class="os">macOS</span>
+    <span class="arch">Apple Silicon</span>
+  </a>
+  <a href="https://github.com/shoulders-ai/mim-awake/releases/latest/download/awake-windows-x86_64.zip">
+    <span class="os">Windows</span>
+    <span class="arch">x86_64</span>
+  </a>
+  <a href="https://github.com/shoulders-ai/mim-awake/releases/latest/download/awake-linux-x86_64.tar.gz">
+    <span class="os">Linux</span>
+    <span class="arch">x86_64</span>
+  </a>
+</div>
+
+<hr class="sep">
+
+<ul class="features">
+  <li>Prevents idle sleep &amp; keeps display on</li>
+  <li>Toggle lid-close sleep prevention</li>
+  <li>macOS menu bar &middot; Windows system tray &middot; Linux CLI</li>
+  <li>Restores all settings on quit</li>
+</ul>
+
+<div class="source">
+  <span>cargo install --git https://github.com/shoulders-ai/mim-awake</span>
+</div>
+
+<footer>
+  <a href="https://github.com/shoulders-ai/mim-awake">GitHub</a>
+</footer>
+
+</body>
+</html>

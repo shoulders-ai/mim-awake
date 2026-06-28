@@ -1,0 +1,104 @@
+name: Build & Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.ref_name }}"
+          REPO="${{ github.repository }}"
+          gh api "repos/$REPO/releases" --jq ".[] | select(.tag_name == \"$TAG\" and .draft) | .id" | while read -r id; do
+            gh api "repos/$REPO/releases/$id" --method DELETE
+          done
+          gh release create "$TAG" --repo "$REPO" --draft --title "Awake $TAG" --notes "Download for your platform below."
+
+  build:
+    needs: create-release
+    if: ${{ always() && !failure() && !cancelled() }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            label: macOS
+            target: aarch64-apple-darwin
+            asset: awake-macos-arm64.zip
+          - os: windows-latest
+            label: Windows
+            target: x86_64-pc-windows-msvc
+            asset: awake-windows-x86_64.zip
+          - os: ubuntu-22.04
+            label: Linux
+            target: x86_64-unknown-linux-gnu
+            asset: awake-linux-x86_64.tar.gz
+
+    runs-on: ${{ matrix.os }}
+    name: Build (${{ matrix.label }})
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p Awake.app/Contents/MacOS
+          cp Info.plist Awake.app/Contents/
+          cp target/${{ matrix.target }}/release/awake Awake.app/Contents/MacOS/
+          strip Awake.app/Contents/MacOS/awake
+          zip -r ${{ matrix.asset }} Awake.app
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path target/${{ matrix.target }}/release/awake.exe -DestinationPath ${{ matrix.asset }}
+
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          strip target/${{ matrix.target }}/release/awake
+          tar czf ${{ matrix.asset }} -C target/${{ matrix.target }}/release awake
+
+      - name: Upload artifact
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: ${{ matrix.asset }}
+
+      - name: Upload to release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: gh release upload "${{ github.ref_name }}" "${{ matrix.asset }}" --repo "${{ github.repository }}" --clobber
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [create-release, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "${{ github.ref_name }}" --repo "${{ github.repository }}" --draft=false
