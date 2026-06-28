@@ -59,19 +59,82 @@ jobs:
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
 
-      - name: Package (macOS)
+      - name: Sign macOS binary
         if: runner.os == 'macOS'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
+          # Import certificate into a temporary keychain
+          KEYCHAIN="build.keychain"
+          KEYCHAIN_PASSWORD="actions"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security default-keychain -s "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          echo "$APPLE_CERTIFICATE" | base64 --decode > cert.p12
+          security import cert.p12 -k "$KEYCHAIN" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          rm cert.p12
+
+          # Bundle the app
           mkdir -p Awake.app/Contents/MacOS
           cp Info.plist Awake.app/Contents/
           cp target/${{ matrix.target }}/release/awake Awake.app/Contents/MacOS/
           strip Awake.app/Contents/MacOS/awake
-          zip -r ${{ matrix.asset }} Awake.app
+
+          # Sign the app bundle
+          codesign --force --options runtime --sign "$APPLE_SIGNING_IDENTITY" --timestamp Awake.app/Contents/MacOS/awake
+          codesign --force --options runtime --sign "$APPLE_SIGNING_IDENTITY" --timestamp Awake.app
+
+          # Create zip for notarization
+          ditto -c -k --keepParent Awake.app ${{ matrix.asset }}
+
+          # Notarize
+          xcrun notarytool submit ${{ matrix.asset }} \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait
+
+          # Staple the app and re-zip
+          xcrun stapler staple Awake.app
+          rm ${{ matrix.asset }}
+          ditto -c -k --keepParent Awake.app ${{ matrix.asset }}
+
+          # Cleanup keychain
+          security delete-keychain "$KEYCHAIN"
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: Compress-Archive -Path target/${{ matrix.target }}/release/awake.exe -DestinationPath ${{ matrix.asset }}
+
+      - name: Sign Windows binary
+        if: runner.os == 'Windows'
+        uses: azure/trusted-signing-action@v0.5.0
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint: https://plc.codesigning.azure.net/
+          trusted-signing-account-name: shoulders
+          certificate-profile-name: mim-1
+          files-folder: target/${{ matrix.target }}/release
+          files-folder-filter: exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Re-package signed Windows binary
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Remove-Item ${{ matrix.asset }}
+          Compress-Archive -Path target/${{ matrix.target }}/release/awake.exe -DestinationPath ${{ matrix.asset }}
 
       - name: Package (Linux)
         if: runner.os == 'Linux'
